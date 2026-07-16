@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ArrowRight, Activity, Zap, RefreshCw } from 'lucide-react'
+import { Activity, RefreshCw } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { AreaTrendChart } from '@/components/charts/AreaTrendChart'
 import { Badge } from '@/components/ui/Badge'
@@ -10,7 +10,7 @@ import { StatCard } from '@/components/ui/StatCard'
 import { appEnv, useMockData } from '@/config/env'
 import { getDashboardData } from '@/services/dashboard'
 import type { DashboardData } from '@/types/dashboard'
-import { formatCompact, formatCurrency, formatPercent, formatRelativeTime } from '@/lib/format'
+import { formatCurrency, formatRelativeTime } from '@/lib/format'
 import { cn } from '@/lib/cn'
 
 const activityIcon: Record<string, string> = {
@@ -90,8 +90,6 @@ export function DashboardPage() {
     )
   }
 
-  const hasCharts = data.tradingVolumeChart.length > 0
-
   return (
     <div>
       <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -106,23 +104,12 @@ export function DashboardPage() {
               {appEnv}
               {useMockData ? ' · mock' : ' · live'}
             </span>
+            {data.generatedAt && (
+              <span className="ml-2 text-[11px] text-muted">
+                Updated {formatRelativeTime(data.generatedAt)}
+              </span>
+            )}
           </p>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="secondary" onClick={() => setReloadKey((k) => k + 1)}>
-            <RefreshCw className="h-4 w-4" />
-            Refresh
-          </Button>
-          <Link
-            to="/trades"
-            className="inline-flex h-10 items-center gap-2 rounded-[12px] border border-border dark:border-border-dark bg-white dark:bg-slate-800 px-4 text-sm font-medium text-slate-700 dark:text-slate-200 transition-all duration-200 hover:bg-slate-50 dark:hover:bg-slate-750"
-          >
-            View trades <ArrowRight className="h-4 w-4" />
-          </Link>
-          <Button>
-            <Zap className="h-4 w-4" />
-            Generate report
-          </Button>
         </div>
       </div>
 
@@ -135,7 +122,7 @@ export function DashboardPage() {
       <div className="grid gap-6 xl:grid-cols-3 mb-6">
         <Card className="xl:col-span-2">
           <CardHeader title="Trading Volume" description="Last 30 days · platform-wide" />
-          {hasCharts ? (
+          {data.tradingVolumeChart.length > 0 ? (
             <AreaTrendChart data={data.tradingVolumeChart} format="currency" height={280} />
           ) : (
             <EmptyChart label="trading volume" />
@@ -143,7 +130,7 @@ export function DashboardPage() {
         </Card>
         <Card>
           <CardHeader title="Daily Users" description="Active unique wallets" />
-          {hasCharts ? (
+          {data.dailyUsersChart.length > 0 ? (
             <AreaTrendChart data={data.dailyUsersChart} color="#3B82F6" height={280} />
           ) : (
             <EmptyChart label="daily users" />
@@ -154,7 +141,7 @@ export function DashboardPage() {
       <div className="grid gap-6 lg:grid-cols-3 mb-6">
         <Card>
           <CardHeader title="Wallet Growth" description="New wallets / day" />
-          {hasCharts ? (
+          {data.walletGrowthChart.length > 0 ? (
             <AreaTrendChart data={data.walletGrowthChart} color="#60A5FA" height={200} />
           ) : (
             <EmptyChart label="wallet growth" />
@@ -162,7 +149,7 @@ export function DashboardPage() {
         </Card>
         <Card>
           <CardHeader title="Referral Growth" description="Commission accrued" />
-          {hasCharts ? (
+          {data.referralGrowthChart.length > 0 ? (
             <AreaTrendChart
               data={data.referralGrowthChart}
               format="currency"
@@ -175,7 +162,7 @@ export function DashboardPage() {
         </Card>
         <Card>
           <CardHeader title="Revenue Analytics" description="Platform fees" />
-          {hasCharts ? (
+          {data.revenueChart.length > 0 ? (
             <AreaTrendChart data={data.revenueChart} format="currency" color="#1D4ED8" height={200} />
           ) : (
             <EmptyChart label="revenue" />
@@ -276,44 +263,8 @@ export function DashboardPage() {
         </Card>
 
         <Card>
-          <CardHeader title="Top Tokens" description="By volume (SOL)" />
-          {data.topTokens.length === 0 ? (
-            <p className="px-1 py-6 text-sm text-muted">No leaderboard tokens yet.</p>
-          ) : (
-            <div className="space-y-3">
-              {data.topTokens.map((token, i) => (
-                <div key={token.symbol} className="flex items-center gap-3">
-                  <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-primary-50 dark:bg-primary-500/10 text-xs font-bold text-primary-700 dark:text-primary-300">
-                    {i + 1}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-slate-900 dark:text-white">{token.symbol}</p>
-                    <p className="text-xs text-muted">{token.name}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-sm font-medium text-slate-800 dark:text-slate-200">
-                      {formatCompact(token.volume)} SOL
-                    </p>
-                    {token.change !== 0 && (
-                      <p
-                        className={cn(
-                          'text-xs font-medium',
-                          token.change >= 0 ? 'text-emerald-600' : 'text-red-500',
-                        )}
-                      >
-                        {formatPercent(token.change)}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          <div className="mt-6 pt-5 border-t border-border dark:border-border-dark">
-            <p className="text-xs font-semibold uppercase tracking-wider text-muted mb-3">
-              Quick Actions
-            </p>
+          <CardHeader title="Quick Actions" description="Jump to a section" />
+          <div>
             <div className="grid grid-cols-2 gap-2">
               {[
                 { to: '/users', label: 'Users' },

@@ -14,8 +14,21 @@ export interface KpiStat {
   value: number
   prefix?: string
   suffix?: string
-  change: number
+  /** % vs the previous period; null when no prior data exists */
+  change: number | null
   format: 'number' | 'currency' | 'compact'
+  /** present on monetary KPIs — values are converted to USD */
+  unit?: 'USD'
+  /** present on monetary KPIs — native amounts + prices used */
+  breakdown?: {
+    solanaVolumeSol?: number
+    robinhoodVolumeEth?: number
+    amountSol?: number
+    solanaWallets?: number
+    robinhoodWallets?: number
+    solPriceUsd?: number | null
+    ethPriceUsd?: number | null
+  }
 }
 
 export interface ChartPoint {

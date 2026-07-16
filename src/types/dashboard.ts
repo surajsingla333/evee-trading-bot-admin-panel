@@ -1,14 +1,8 @@
 import type { ActivityItem, ChartPoint, KpiStat, Trade } from '@/types'
 
-export interface TopToken {
-  symbol: string
-  name: string
-  volume: number
-  change: number
-}
-
 export interface DashboardData {
   kpiStats: KpiStat[]
+  generatedAt?: string
   tradingVolumeChart: ChartPoint[]
   dailyUsersChart: ChartPoint[]
   walletGrowthChart: ChartPoint[]
@@ -16,7 +10,6 @@ export interface DashboardData {
   revenueChart: ChartPoint[]
   recentActivity: ActivityItem[]
   trades: Trade[]
-  topTokens: TopToken[]
 }
 
 export interface DashboardSummaryResponse {

@@ -8,9 +8,7 @@ import {
   Menu,
   Moon,
   Plus,
-  Settings,
   Sun,
-  User,
 } from 'lucide-react'
 import { breadcrumbLabels } from '@/config/navigation'
 import { useSidebar } from '@/hooks/useSidebar'
@@ -159,20 +157,6 @@ export function TopNav() {
                   <p className="text-sm font-medium text-slate-900 dark:text-white">Alex Rivera</p>
                   <p className="text-xs text-muted">alex@stack.admin</p>
                 </div>
-                <Link
-                  to="/settings"
-                  className="flex items-center gap-2 rounded-[10px] px-3 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
-                  onClick={() => setProfileOpen(false)}
-                >
-                  <User className="h-4 w-4" /> Profile
-                </Link>
-                <Link
-                  to="/settings"
-                  className="flex items-center gap-2 rounded-[10px] px-3 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
-                  onClick={() => setProfileOpen(false)}
-                >
-                  <Settings className="h-4 w-4" /> Settings
-                </Link>
                 <button
                   type="button"
                   className="flex w-full items-center gap-2 rounded-[10px] px-3 py-2 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10"

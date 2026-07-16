@@ -1,3 +1,4 @@
+import axios from 'axios'
 import { useMockData } from '@/config/env'
 import {
   dailyUsersChart,
@@ -5,63 +6,83 @@ import {
   recentActivity,
   referralGrowthChart,
   revenueChart,
-  topTokens,
   trades,
   tradingVolumeChart,
   walletGrowthChart,
 } from '@/data/mock'
 import { api, assertLiveApi } from '@/lib/api'
-import type {
-  ApiLeaderboardEntry,
-  ApiTrade,
-  DashboardData,
-  DashboardSummaryResponse,
-  Paginated,
-} from '@/types/dashboard'
+import type { ApiTrade, DashboardData, Paginated } from '@/types/dashboard'
 import type { ActivityItem, KpiStat, Trade } from '@/types'
 
-function mapSummaryToKpis(summary: DashboardSummaryResponse): KpiStat[] {
-  return [
-    { id: 'users', label: 'Total Users', value: summary.users, change: 0, format: 'number' },
-    { id: 'wallets', label: 'Active Wallets', value: summary.wallets, change: 0, format: 'number' },
-    { id: 'trades', label: 'Total Trades', value: summary.trades, change: 0, format: 'compact' },
-    {
-      id: 'volume',
-      label: 'Trade Volume (SOL)',
-      value: summary.tradeVolumeSol,
-      change: 0,
-      format: 'number',
-      suffix: ' SOL',
-    },
-    {
-      id: 'positions',
-      label: 'Open Positions',
-      value: summary.openPositions,
-      change: 0,
-      format: 'number',
-    },
-    {
-      id: 'closed',
-      label: 'Closed Positions',
-      value: summary.closedPositions,
-      change: 0,
-      format: 'number',
-    },
-    {
-      id: 'orders',
-      label: 'Open Limit Orders',
-      value: summary.openLimitOrders,
-      change: 0,
-      format: 'number',
-    },
-    {
-      id: 'leaderboard',
-      label: 'Leaderboard Tokens',
-      value: summary.leaderboardTokens,
-      change: 0,
-      format: 'number',
-    },
-  ]
+export type StatsPeriod = '7d' | '30d' | '90d'
+
+interface StatsChartPoint {
+  date: string
+  value: number
+}
+
+interface DashboardStatsResponse {
+  period: string
+  generatedAt: string
+  items: KpiStat[]
+  prices?: {
+    solPriceUsd: number | null
+    ethPriceUsd: number | null
+  }
+  charts?: {
+    tradingVolume?: StatsChartPoint[]
+    dailyUsers?: StatsChartPoint[]
+    walletGrowth?: StatsChartPoint[]
+    referralGrowth?: StatsChartPoint[]
+    revenue?: StatsChartPoint[]
+  }
+}
+
+interface DashboardSummaryResponse {
+  users: number
+  wallets: number
+  openLimitOrders: number
+  leaderboardTokens: number
+  trades: number
+  tradeVolumeSol: number
+  openPositions: number
+  closedPositions: number
+}
+
+/** Fallback while the deployed API doesn't have /dashboard/stats yet */
+async function fetchStatsWithFallback(period: StatsPeriod): Promise<DashboardStatsResponse> {
+  try {
+    const res = await api.get<DashboardStatsResponse>('/api/v1/dashboard/stats', {
+      params: { period },
+    })
+    return res.data
+  } catch (err) {
+    if (!axios.isAxiosError(err) || err.response?.status !== 404) throw err
+
+    const res = await api.get<DashboardSummaryResponse>('/api/v1/dashboard/summary')
+    const s = res.data
+    return {
+      period,
+      generatedAt: new Date().toISOString(),
+      items: [
+        { id: 'users', label: 'Total Users', value: s.users, change: null, format: 'number' },
+        { id: 'wallets', label: 'Active Wallets', value: s.wallets, change: null, format: 'number' },
+        { id: 'trades', label: 'Total Trades', value: s.trades, change: null, format: 'compact' },
+        {
+          id: 'volume',
+          label: 'Trade Volume',
+          value: s.tradeVolumeSol,
+          change: null,
+          format: 'number',
+          suffix: ' SOL',
+        },
+        { id: 'positions', label: 'Open Positions', value: s.openPositions, change: null, format: 'number' },
+        { id: 'closed', label: 'Closed Positions', value: s.closedPositions, change: null, format: 'number' },
+        { id: 'orders', label: 'Open Limit Orders', value: s.openLimitOrders, change: null, format: 'number' },
+        { id: 'leaderboard', label: 'Leaderboard Tokens', value: s.leaderboardTokens, change: null, format: 'number' },
+      ],
+    }
+  }
 }
 
 function mapTradeStatus(status?: string): Trade['status'] {
@@ -103,6 +124,24 @@ function mapApiTrade(t: ApiTrade): Trade {
   }
 }
 
+interface RecentActivityResponse {
+  items: ActivityItem[]
+  total: number
+}
+
+/** Returns null when the deployed API doesn't have /dashboard/recent-activity yet */
+async function fetchRecentActivity(): Promise<ActivityItem[] | null> {
+  try {
+    const res = await api.get<RecentActivityResponse>('/api/v1/dashboard/recent-activity', {
+      params: { limit: 8 },
+    })
+    return res.data.items || []
+  } catch (err) {
+    if (axios.isAxiosError(err) && err.response?.status === 404) return null
+    throw err
+  }
+}
+
 function activitiesFromTrades(tradeList: Trade[]): ActivityItem[] {
   return tradeList.slice(0, 6).map((t) => ({
     id: `act_${t.id}`,
@@ -113,41 +152,34 @@ function activitiesFromTrades(tradeList: Trade[]): ActivityItem[] {
   }))
 }
 
-async function fetchLiveDashboard(): Promise<DashboardData> {
+async function fetchLiveDashboard(period: StatsPeriod): Promise<DashboardData> {
   assertLiveApi()
 
-  const [summaryRes, tradesRes, leaderboardRes] = await Promise.all([
-    api.get<DashboardSummaryResponse>('/api/v1/dashboard/summary'),
+  const [stats, activity, tradesRes] = await Promise.all([
+    fetchStatsWithFallback(period),
+    fetchRecentActivity(),
     api.get<Paginated<ApiTrade>>('/api/v1/trades', { params: { page: 1, limit: 8 } }),
-    api.get<Paginated<ApiLeaderboardEntry>>('/api/v1/leaderboard', {
-      params: { page: 1, limit: 5, sortField: 'totalVolumeSol' },
-    }),
   ])
 
   const mappedTrades = (tradesRes.data.items || []).map(mapApiTrade)
-  const emptyChart: DashboardData['tradingVolumeChart'] = []
+  const charts = stats.charts
 
   return {
-    kpiStats: mapSummaryToKpis(summaryRes.data),
-    tradingVolumeChart: emptyChart,
-    dailyUsersChart: emptyChart,
-    walletGrowthChart: emptyChart,
-    referralGrowthChart: emptyChart,
-    revenueChart: emptyChart,
-    recentActivity: activitiesFromTrades(mappedTrades),
+    kpiStats: (stats.items || []).filter((s) => s.id !== 'features'),
+    generatedAt: stats.generatedAt,
+    tradingVolumeChart: charts?.tradingVolume ?? [],
+    dailyUsersChart: charts?.dailyUsers ?? [],
+    walletGrowthChart: charts?.walletGrowth ?? [],
+    referralGrowthChart: charts?.referralGrowth ?? [],
+    revenueChart: charts?.revenue ?? [],
+    recentActivity: activity ?? activitiesFromTrades(mappedTrades),
     trades: mappedTrades,
-    topTokens: (leaderboardRes.data.items || []).map((token) => ({
-      symbol: token.ticker || token.tokenAddress.slice(0, 4).toUpperCase(),
-      name: token.name || token.ticker || token.tokenAddress,
-      volume: token.totalVolumeSol,
-      change: 0,
-    })),
   }
 }
 
 function fetchMockDashboard(): DashboardData {
   return {
-    kpiStats,
+    kpiStats: kpiStats.filter((s) => s.id !== 'features'),
     tradingVolumeChart,
     dailyUsersChart,
     walletGrowthChart,
@@ -155,11 +187,10 @@ function fetchMockDashboard(): DashboardData {
     revenueChart,
     recentActivity,
     trades,
-    topTokens,
   }
 }
 
-export async function getDashboardData(): Promise<DashboardData> {
+export async function getDashboardData(period: StatsPeriod = '30d'): Promise<DashboardData> {
   if (useMockData) return fetchMockDashboard()
-  return fetchLiveDashboard()
+  return fetchLiveDashboard(period)
 }

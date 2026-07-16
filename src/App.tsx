@@ -17,12 +17,6 @@ const WalletsPage = lazy(() =>
 const TradesPage = lazy(() =>
   import('@/features/trades/TradesPage').then((m) => ({ default: m.TradesPage })),
 )
-const PositionsPage = lazy(() =>
-  import('@/features/positions/PositionsPage').then((m) => ({ default: m.PositionsPage })),
-)
-const LimitOrdersPage = lazy(() =>
-  import('@/features/limit-orders/LimitOrdersPage').then((m) => ({ default: m.LimitOrdersPage })),
-)
 const LeaderboardPage = lazy(() =>
   import('@/features/leaderboard/LeaderboardPage').then((m) => ({ default: m.LeaderboardPage })),
 )
@@ -34,9 +28,6 @@ const ReferralPaymentsPage = lazy(() =>
     default: m.ReferralPaymentsPage,
   })),
 )
-const AdminUsersPage = lazy(() =>
-  import('@/features/admin-users/AdminUsersPage').then((m) => ({ default: m.AdminUsersPage })),
-)
 const FeatureTogglesPage = lazy(() =>
   import('@/features/feature-toggles/FeatureTogglesPage').then((m) => ({
     default: m.FeatureTogglesPage,
@@ -44,9 +35,6 @@ const FeatureTogglesPage = lazy(() =>
 )
 const BotStoragePage = lazy(() =>
   import('@/features/bot-storage/BotStoragePage').then((m) => ({ default: m.BotStoragePage })),
-)
-const SettingsPage = lazy(() =>
-  import('@/features/settings/SettingsPage').then((m) => ({ default: m.SettingsPage })),
 )
 
 function PageLoader() {
@@ -71,15 +59,11 @@ export default function App() {
                 <Route path="users" element={<UsersPage />} />
                 <Route path="wallets" element={<WalletsPage />} />
                 <Route path="trades" element={<TradesPage />} />
-                <Route path="positions" element={<PositionsPage />} />
-                <Route path="limit-orders" element={<LimitOrdersPage />} />
                 <Route path="leaderboard" element={<LeaderboardPage />} />
                 <Route path="referrals" element={<ReferralsPage />} />
                 <Route path="referral-payments" element={<ReferralPaymentsPage />} />
-                <Route path="admin-users" element={<AdminUsersPage />} />
                 <Route path="feature-toggles" element={<FeatureTogglesPage />} />
                 <Route path="bot-storage" element={<BotStoragePage />} />
-                <Route path="settings" element={<SettingsPage />} />
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Route>
             </Routes>

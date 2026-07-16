@@ -1,8 +1,9 @@
 import axios from 'axios'
 import { apiToken, apiUrl, useMockData } from '@/config/env'
 
+// Empty baseURL = same-origin requests, served by the dev/prod proxy (avoids CORS)
 export const api = axios.create({
-  baseURL: apiUrl || '/api',
+  baseURL: apiUrl,
   timeout: 15000,
   headers: {
     'Content-Type': 'application/json',
@@ -30,9 +31,6 @@ api.interceptors.response.use(
 export function assertLiveApi() {
   if (useMockData) {
     throw new Error('Live API is disabled while VITE_APP_ENV=test')
-  }
-  if (!apiUrl) {
-    throw new Error('VITE_API_URL is not configured')
   }
   if (!apiToken && !localStorage.getItem('stack_admin_token')) {
     throw new Error('VITE_API_TOKEN is not configured')
