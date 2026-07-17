@@ -29,15 +29,18 @@ import {
   type ReferralPaymentRow,
   type ReferralPaymentsResult,
 } from '@/services/referralPayments'
-import {
-  hasWalletForChain,
-  sendPayoutWithWallet,
-  walletLabelForChain,
-} from '@/lib/solanaPayout'
+import { ManualWalletPayButton } from '@/features/referral-payments/ManualWalletPayButton'
 import type { BadgeVariant } from '@/types'
 import { formatCurrency, formatRelativeTime } from '@/lib/format'
 
-type PayPhase = 'idle' | 'preparing' | 'awaiting_signature' | 'confirming' | 'done' | 'error'
+type PayPhase =
+  | 'idle'
+  | 'preparing'
+  | 'ready'
+  | 'paying'
+  | 'confirming'
+  | 'done'
+  | 'error'
 
 const statusVariant: Record<string, BadgeVariant> = {
   paid: 'success',
@@ -155,7 +158,7 @@ export function ReferralPaymentsPage() {
     try {
       const result = await prepareClaimPayout(claim.id)
       setPrep(result)
-      setPayPhase('awaiting_signature')
+      setPayPhase('ready')
     } catch (err) {
       setPayError(claimErrorMessage(err as ClaimActionError))
       setPayPhase('error')
@@ -179,26 +182,6 @@ export function ReferralPaymentsPage() {
         return confirmWithRetry(claimId, hash, attempt + 1)
       }
       throw err
-    }
-  }
-
-  async function payWithWallet() {
-    if (!prep) return
-    setPayError(null)
-    setPayPhase('awaiting_signature')
-    try {
-      const signature = await sendPayoutWithWallet({
-        chain: prep.chain,
-        to: prep.recipientAddress,
-        amountLamports: prep.amountLamports,
-        amountWei: prep.amountWei,
-      })
-      setTxHash(signature)
-      setPayPhase('confirming')
-      await confirmWithRetry(prep.claimId, signature)
-    } catch (err) {
-      setPayError(err instanceof Error ? err.message : claimErrorMessage(err))
-      setPayPhase('error')
     }
   }
 
@@ -258,8 +241,6 @@ export function ReferralPaymentsPage() {
   function showReject(claim: ReferralPaymentRow) {
     return claim.status === 'pending'
   }
-
-  const walletBtnLabel = prep ? walletLabelForChain(prep.chain) : null
 
   return (
     <div>
@@ -617,42 +598,28 @@ export function ReferralPaymentsPage() {
                 ) : (
                   <>
                     <p className="text-xs text-muted">
-                      Send exactly {formatAmount(prep.amountSol, prep.currency)} on{' '}
-                      <strong className="capitalize">{prep.chain}</strong> to the recipient,
-                      then confirm.
+                      {prep.chain === 'robinhood'
+                        ? 'Connect a wallet with RainbowKit, switch to Robinhood Chain, then pay.'
+                        : 'Connect Phantom or Solflare, then pay SOL from your wallet.'}
                     </p>
 
-                    {walletBtnLabel && (
-                      <Button
-                        className="w-full"
-                        disabled={
-                          payPhase === 'awaiting_signature' ||
-                          payPhase === 'confirming' ||
-                          !hasWalletForChain(prep.chain)
-                        }
-                        onClick={() => void payWithWallet()}
-                      >
-                        {(payPhase === 'awaiting_signature' ||
-                          payPhase === 'confirming') && (
-                          <Loader2 className="h-4 w-4 animate-spin shrink-0" />
-                        )}
-                        {payPhase === 'awaiting_signature'
-                          ? prep.chain === 'robinhood'
-                            ? 'Waiting for MetaMask…'
-                            : 'Waiting for Phantom…'
-                          : payPhase === 'confirming'
-                            ? 'Confirming payout…'
-                            : walletBtnLabel}
-                      </Button>
-                    )}
-
-                    {!walletBtnLabel && (
-                      <p className="text-xs text-amber-600">
-                        {prep.chain === 'robinhood'
-                          ? 'No Ethereum wallet detected. Install MetaMask (Robinhood Chain) or paste a tx hash after sending ETH.'
-                          : 'No Phantom wallet detected. Install Phantom or paste a Solana signature after sending SOL.'}
-                      </p>
-                    )}
+                    <ManualWalletPayButton
+                      prep={prep}
+                      phase={
+                        payPhase === 'paying' ||
+                        payPhase === 'confirming' ||
+                        payPhase === 'error' ||
+                        payPhase === 'ready'
+                          ? payPhase === 'ready'
+                            ? 'idle'
+                            : payPhase
+                          : 'idle'
+                      }
+                      onPhase={(p) => setPayPhase(p)}
+                      onTxHash={setTxHash}
+                      onConfirm={(hash) => confirmWithRetry(prep.claimId, hash)}
+                      onError={(msg) => setPayError(msg || null)}
+                    />
 
                     <div className="space-y-2">
                       <label className="text-xs font-medium text-muted">
@@ -661,9 +628,7 @@ export function ReferralPaymentsPage() {
                       <Input
                         value={txHash}
                         onChange={(e) => setTxHash(e.target.value)}
-                        disabled={
-                          payPhase === 'awaiting_signature' || payPhase === 'confirming'
-                        }
+                        disabled={payPhase === 'paying' || payPhase === 'confirming'}
                         placeholder={
                           prep.chain === 'robinhood'
                             ? '0x… Robinhood Chain transaction hash'
@@ -675,7 +640,7 @@ export function ReferralPaymentsPage() {
                         variant="secondary"
                         disabled={
                           !txHash.trim() ||
-                          payPhase === 'awaiting_signature' ||
+                          payPhase === 'paying' ||
                           payPhase === 'confirming'
                         }
                         onClick={() => void onConfirmPaste()}

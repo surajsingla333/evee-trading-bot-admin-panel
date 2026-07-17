@@ -13,6 +13,20 @@ export default defineConfig(({ mode }) => {
     resolve: {
       alias: {
         '@': path.resolve(__dirname, './src'),
+        buffer: 'buffer',
+      },
+    },
+    define: {
+      global: 'globalThis',
+    },
+    optimizeDeps: {
+      include: ['buffer', '@solana/web3.js'],
+      rolldownOptions: {
+        transform: {
+          define: {
+            global: 'globalThis',
+          },
+        },
       },
     },
     server: {

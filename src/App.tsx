@@ -2,6 +2,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { Suspense, lazy } from 'react'
 import { ThemeProvider } from '@/hooks/useTheme'
 import { SidebarProvider } from '@/hooks/useSidebar'
+import { WalletProviders } from '@/providers/WalletProviders'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
 import { SkeletonCard } from '@/components/ui/Skeleton'
 
@@ -50,26 +51,28 @@ function PageLoader() {
 export default function App() {
   return (
     <ThemeProvider>
-      <SidebarProvider>
-        <BrowserRouter>
-          <Suspense fallback={<PageLoader />}>
-            <Routes>
-              <Route element={<DashboardLayout />}>
-                <Route index element={<DashboardPage />} />
-                <Route path="users" element={<UsersPage />} />
-                <Route path="wallets" element={<WalletsPage />} />
-                <Route path="trades" element={<TradesPage />} />
-                <Route path="leaderboard" element={<LeaderboardPage />} />
-                <Route path="referrals" element={<ReferralsPage />} />
-                <Route path="referral-payments" element={<ReferralPaymentsPage />} />
-                <Route path="feature-toggles" element={<FeatureTogglesPage />} />
-                <Route path="bot-storage" element={<BotStoragePage />} />
-                <Route path="*" element={<Navigate to="/" replace />} />
-              </Route>
-            </Routes>
-          </Suspense>
-        </BrowserRouter>
-      </SidebarProvider>
+      <WalletProviders>
+        <SidebarProvider>
+          <BrowserRouter>
+            <Suspense fallback={<PageLoader />}>
+              <Routes>
+                <Route element={<DashboardLayout />}>
+                  <Route index element={<DashboardPage />} />
+                  <Route path="users" element={<UsersPage />} />
+                  <Route path="wallets" element={<WalletsPage />} />
+                  <Route path="trades" element={<TradesPage />} />
+                  <Route path="leaderboard" element={<LeaderboardPage />} />
+                  <Route path="referrals" element={<ReferralsPage />} />
+                  <Route path="referral-payments" element={<ReferralPaymentsPage />} />
+                  <Route path="feature-toggles" element={<FeatureTogglesPage />} />
+                  <Route path="bot-storage" element={<BotStoragePage />} />
+                  <Route path="*" element={<Navigate to="/" replace />} />
+                </Route>
+              </Routes>
+            </Suspense>
+          </BrowserRouter>
+        </SidebarProvider>
+      </WalletProviders>
     </ThemeProvider>
   )
 }
