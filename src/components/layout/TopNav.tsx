@@ -3,11 +3,9 @@ import { Link, useLocation } from 'react-router-dom'
 import {
   Bell,
   ChevronDown,
-  Command,
   LogOut,
   Menu,
   Moon,
-  Plus,
   Sun,
 } from 'lucide-react'
 import { breadcrumbLabels } from '@/config/navigation'
@@ -15,7 +13,6 @@ import { useSidebar } from '@/hooks/useSidebar'
 import { useTheme } from '@/hooks/useTheme'
 import { Avatar } from '@/components/ui/Avatar'
 import { Button } from '@/components/ui/Button'
-import { SearchInput } from '@/components/ui/Input'
 import { cn } from '@/lib/cn'
 
 export function TopNav() {
@@ -84,20 +81,6 @@ export function TopNav() {
         </nav>
 
         <div className="ml-auto flex items-center gap-2">
-          <SearchInput
-            placeholder="Search…"
-            containerClassName="hidden sm:block w-48 lg:w-64"
-            className="bg-surface dark:bg-slate-900/40"
-          />
-
-          <Button variant="secondary" size="sm" className="hidden lg:inline-flex gap-1.5">
-            <Plus className="h-3.5 w-3.5" />
-            Quick action
-            <kbd className="ml-1 hidden xl:inline-flex items-center gap-0.5 rounded-md border border-border dark:border-border-dark bg-surface dark:bg-slate-800 px-1.5 py-0.5 text-[10px] text-muted">
-              <Command className="h-2.5 w-2.5" />K
-            </kbd>
-          </Button>
-
           <div className="relative" ref={notifRef}>
             <Button
               variant="ghost"
@@ -145,17 +128,17 @@ export function TopNav() {
               onClick={() => setProfileOpen((o) => !o)}
               className="flex items-center gap-2 rounded-[12px] py-1.5 pl-1.5 pr-2.5 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors focus-ring"
             >
-              <Avatar initials="AR" name="Alex Rivera" size="sm" />
+              <Avatar initials="AD" name="Admin" size="sm" />
               <span className="hidden sm:block text-sm font-medium text-slate-800 dark:text-slate-200">
-                Alex
+                Admin
               </span>
               <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
             </button>
             {profileOpen && (
               <div className="absolute right-0 mt-2 w-56 rounded-[16px] border border-border dark:border-border-dark bg-white dark:bg-slate-900 shadow-elevated p-1.5 animate-fade-in">
                 <div className="px-3 py-2.5 border-b border-border dark:border-border-dark mb-1">
-                  <p className="text-sm font-medium text-slate-900 dark:text-white">Alex Rivera</p>
-                  <p className="text-xs text-muted">alex@stack.admin</p>
+                  <p className="text-sm font-medium text-slate-900 dark:text-white">Admin</p>
+                  <p className="text-xs text-muted">admin@evee</p>
                 </div>
                 <button
                   type="button"

@@ -14,61 +14,53 @@ export interface ReferralRow {
   volumeSol: number
   volumeEth: number
   volumeUsd: number
-  /** USD when available; falls back to SOL-denominated balance on older APIs */
+  /** SOL */
   pendingRewards: number
-  pendingRewardsSol: number | null
+  pendingRewardsUsd: number
+  /** SOL */
   paidRewards: number
-  paidRewardsSol: number | null
+  paidRewardsUsd: number
+  /** SOL remaining */
   claimableRewards: number
-  claimableRewardsSol: number | null
+  claimableRewardsUsd: number
+  pendingClaims: number
   status: 'active' | 'inactive'
+  lastVolumeAt: string | null
 }
 
 export interface ReferredUser {
   userId: string
-  username: string | null
-  joinedAt: string | null
+  userName: string | null
+  referralCode: string | null
+  registeredAt: string | null
+  /** Present when derived from older APIs / volume.activeTraderIds */
   traded: boolean
-  volumeUsd: number
 }
 
 export interface ClaimHistoryItem {
   id: string
+  status: string
   amountSol: number
-  amountUsd: number
-  status: 'pending' | 'paid' | 'failed'
-  wallet: string | null
-  txHash: string | null
+  telegramHandle: string | null
+  payoutTxHash: string | null
   createdAt: string | null
+  paidAt: string | null
+}
+
+export interface ReferralVolume {
+  solLamports: string
+  ethWei: string
+  activeTraderIds: string[]
+  updatedAt: string | null
 }
 
 export interface ReferralDetail {
-  userId: string
-  userName: string | null
-  code: string | null
-  status: 'active' | 'inactive'
-  referrals: number
-  activeReferrals: number
-  volumeSol: number
-  volumeEth: number
-  volumeUsd: number
-  pendingRewards: number
-  paidRewards: number
-  claimableRewards: number
+  referrer: ReferralRow | null
   referredUsers: ReferredUser[]
   claims: ClaimHistoryItem[]
-}
-
-export interface ReferralPaymentRow {
-  id: string
-  userId: string | null
-  userName: string | null
-  amount: number
-  amountSol: number | null
-  status: 'pending' | 'paid' | 'failed'
-  wallet: string | null
-  hash: string | null
-  time: string | null
+  volume: ReferralVolume | null
+  prices: { solPriceUsd: number | null; ethPriceUsd: number | null }
+  rewardRate: number
 }
 
 export interface ReferralsResult {
@@ -76,13 +68,8 @@ export interface ReferralsResult {
   total: number
   page: number
   totalPages: number
-}
-
-export interface ReferralPaymentsResult {
-  items: ReferralPaymentRow[]
-  total: number
-  page: number
-  totalPages: number
+  prices: { solPriceUsd: number | null; ethPriceUsd: number | null }
+  rewardRate: number
 }
 
 const PAGE_SIZE = 20
@@ -92,7 +79,7 @@ function num(v: unknown, fallback = 0) {
   return Number.isFinite(n) ? n : fallback
 }
 
-/** Maps Claim v2 rows and the older admin referral summary. */
+/** Maps Claim v2 Referral rows; falls back for older admin referral summaries. */
 export function mapReferralRow(raw: any): ReferralRow {
   const userId = String(raw.userId ?? raw.id ?? '')
   const code = raw.code ?? raw.referralCode ?? null
@@ -103,16 +90,19 @@ export function mapReferralRow(raw: any): ReferralRow {
         ? 'active'
         : 'inactive'
 
-  const pendingRewards = num(
-    raw.pendingRewardsUsd ?? raw.pendingRewards ?? raw.pendingBalance,
-  )
-  const paidRewards = num(raw.paidRewardsUsd ?? raw.paidRewards ?? raw.totalPaidOut)
-  const claimableRewards = num(
-    raw.claimableRewardsUsd ?? raw.claimableRewards ?? raw.pendingBalance,
-  )
+  // New shape: pendingRewards / paidRewards / claimableRewards are SOL.
+  // Older shape only had pendingBalance / totalPaidOut (SOL) without USD pairs.
+  const hasUsdPairs =
+    raw.pendingRewardsUsd != null ||
+    raw.paidRewardsUsd != null ||
+    raw.claimableRewardsUsd != null
+
+  const pendingRewards = num(raw.pendingRewards ?? raw.pendingBalance)
+  const paidRewards = num(raw.paidRewards ?? raw.totalPaidOut)
+  const claimableRewards = num(raw.claimableRewards ?? raw.pendingBalance)
 
   return {
-    id: raw.id ?? userId,
+    id: String(raw.id ?? userId),
     userId,
     userName: raw.userName ?? raw.username ?? null,
     code,
@@ -122,117 +112,115 @@ export function mapReferralRow(raw: any): ReferralRow {
     volumeEth: num(raw.volumeEth),
     volumeUsd: num(raw.volumeUsd),
     pendingRewards,
-    pendingRewardsSol:
-      raw.pendingRewardsSol != null
-        ? num(raw.pendingRewardsSol)
-        : raw.pendingBalance != null && raw.pendingRewardsUsd == null
-          ? num(raw.pendingBalance)
-          : null,
+    pendingRewardsUsd: hasUsdPairs
+      ? num(raw.pendingRewardsUsd)
+      : num(raw.pendingRewardsUsd ?? 0),
     paidRewards,
-    paidRewardsSol:
-      raw.paidRewardsSol != null
-        ? num(raw.paidRewardsSol)
-        : raw.totalPaidOut != null && raw.paidRewardsUsd == null
-          ? num(raw.totalPaidOut)
-          : null,
+    paidRewardsUsd: hasUsdPairs ? num(raw.paidRewardsUsd) : num(raw.paidRewardsUsd ?? 0),
     claimableRewards,
-    claimableRewardsSol:
-      raw.claimableRewardsSol != null ? num(raw.claimableRewardsSol) : null,
+    claimableRewardsUsd: hasUsdPairs
+      ? num(raw.claimableRewardsUsd)
+      : num(raw.claimableRewardsUsd ?? 0),
+    pendingClaims: num(raw.pendingClaims),
     status,
+    lastVolumeAt: raw.lastVolumeAt ?? raw.lastActivityDate ?? null,
   }
 }
 
 function mapClaim(raw: any): ClaimHistoryItem {
-  const statusRaw = (raw.status || '').toLowerCase()
-  const status: ClaimHistoryItem['status'] =
-    statusRaw === 'paid' || statusRaw === 'completed'
-      ? 'paid'
-      : statusRaw === 'failed' || statusRaw === 'error'
-        ? 'failed'
-        : 'pending'
-
   return {
     id: String(raw.id ?? raw._id ?? raw.claimId ?? ''),
+    status: String(raw.status ?? 'pending'),
     amountSol: num(raw.amountSol ?? raw.amount),
-    amountUsd: num(raw.amountUsd ?? raw.amountUsdEquivalent ?? 0),
-    status,
-    wallet: raw.wallet ?? raw.walletAddress ?? raw.publicKey ?? null,
-    txHash: raw.txHash ?? raw.hash ?? raw.signature ?? null,
-    createdAt: raw.createdAt ?? raw.time ?? raw.paidAt ?? raw.timestamp ?? null,
+    telegramHandle: raw.telegramHandle ?? raw.username ?? null,
+    payoutTxHash: raw.payoutTxHash ?? raw.txHash ?? raw.hash ?? raw.signature ?? null,
+    createdAt: raw.createdAt ?? raw.time ?? null,
+    paidAt: raw.paidAt ?? null,
   }
 }
 
-function mapReferredUser(raw: any): ReferredUser {
+function mapReferredUser(raw: any, activeTraderIds: Set<string> = new Set()): ReferredUser {
+  const userId = String(raw.userId ?? raw.id ?? '')
   return {
-    userId: String(raw.userId ?? raw.id ?? ''),
-    username: raw.username ?? raw.userName ?? null,
-    joinedAt: raw.joinedAt ?? raw.createdAt ?? null,
-    traded: !!(raw.traded ?? raw.isActive ?? raw.active),
-    volumeUsd: num(raw.volumeUsd ?? raw.volume),
+    userId,
+    userName: raw.userName ?? raw.username ?? null,
+    referralCode: raw.referralCode ?? raw.code ?? null,
+    registeredAt: raw.registeredAt ?? raw.joinedAt ?? raw.createdAt ?? null,
+    traded: activeTraderIds.has(userId) || !!(raw.traded ?? raw.isActive ?? raw.active),
   }
 }
 
+function mapVolume(raw: any): ReferralVolume | null {
+  if (!raw || typeof raw !== 'object') return null
+  return {
+    solLamports: String(raw.solLamports ?? '0'),
+    ethWei: String(raw.ethWei ?? '0'),
+    activeTraderIds: Array.isArray(raw.activeTraderIds)
+      ? raw.activeTraderIds.map(String)
+      : [],
+    updatedAt: raw.updatedAt ?? null,
+  }
+}
+
+/** Maps GET /api/v1/referrals/{userId} ReferralDetails (+ older shapes). */
 export function mapReferralDetail(raw: any, userId: string): ReferralDetail {
-  // Claim v2 shape
-  if (raw.referredUsers !== undefined || raw.claims !== undefined || raw.code !== undefined) {
+  // New Claim v2 detail: { referrer, referredUsers, claims, volume, prices, rewardRate }
+  if (raw.referrer !== undefined || (raw.referredUsers !== undefined && raw.prices !== undefined)) {
+    const volume = mapVolume(raw.volume)
+    const activeIds = new Set(volume?.activeTraderIds ?? [])
     return {
-      userId: String(raw.userId ?? userId),
-      userName: raw.userName ?? raw.username ?? null,
-      code: raw.code ?? raw.referralCode ?? null,
-      status:
-        raw.status === 'inactive' || raw.isActive === false ? 'inactive' : 'active',
-      referrals: num(raw.referrals ?? raw.totalReferrals ?? raw.referredUsers?.length),
-      activeReferrals: num(raw.activeReferrals),
-      volumeSol: num(raw.volumeSol),
-      volumeEth: num(raw.volumeEth),
-      volumeUsd: num(raw.volumeUsd),
-      pendingRewards: num(raw.pendingRewardsUsd ?? raw.pendingRewards),
-      paidRewards: num(raw.paidRewardsUsd ?? raw.paidRewards),
-      claimableRewards: num(raw.claimableRewardsUsd ?? raw.claimableRewards),
-      referredUsers: (raw.referredUsers || raw.directReferrals || []).map(mapReferredUser),
-      claims: (raw.claims || raw.claimHistory || raw.payouts || []).map(mapClaim),
+      referrer: raw.referrer ? mapReferralRow(raw.referrer) : null,
+      referredUsers: (raw.referredUsers || []).map((u: any) => mapReferredUser(u, activeIds)),
+      claims: (raw.claims || []).map(mapClaim),
+      volume,
+      prices: {
+        solPriceUsd: raw.prices?.solPriceUsd ?? null,
+        ethPriceUsd: raw.prices?.ethPriceUsd ?? null,
+      },
+      rewardRate: num(raw.rewardRate, 0.001),
     }
   }
 
-  // Older detail shape
+  // Flat referral-shaped payload (or older wrappers)
+  if (raw.referredUsers !== undefined || raw.claims !== undefined || raw.code !== undefined) {
+    const referrerSource = raw.referrer ?? raw
+    return {
+      referrer: mapReferralRow({ ...referrerSource, userId: referrerSource.userId ?? userId }),
+      referredUsers: (raw.referredUsers || raw.directReferrals || []).map((u: any) =>
+        mapReferredUser(u),
+      ),
+      claims: (raw.claims || raw.claimHistory || raw.payouts || []).map(mapClaim),
+      volume: mapVolume(raw.volume),
+      prices: {
+        solPriceUsd: raw.prices?.solPriceUsd ?? null,
+        ethPriceUsd: raw.prices?.ethPriceUsd ?? null,
+      },
+      rewardRate: num(raw.rewardRate, 0.001),
+    }
+  }
+
+  // Oldest detail shape: { userId, relationship, balance, directReferrals, commissions, payouts }
   const balance = raw.balance ?? {}
   return {
-    userId: String(raw.userId ?? userId),
-    userName: null,
-    code: raw.relationship?.referralCode ?? null,
-    status: (raw.directReferrals || []).length > 0 ? 'active' : 'inactive',
-    referrals: (raw.directReferrals || []).length,
-    activeReferrals: (raw.directReferrals || []).filter((r: any) => r.isActive).length,
-    volumeSol: num(balance.volumeSol),
-    volumeEth: num(balance.volumeEth),
-    volumeUsd: num(balance.volumeUsd),
-    pendingRewards: num(balance.pendingBalance ?? balance.pendingRewards),
-    paidRewards: num(balance.totalPaidOut ?? balance.paidRewards),
-    claimableRewards: num(balance.pendingBalance ?? balance.claimableRewards),
-    referredUsers: (raw.directReferrals || []).map(mapReferredUser),
+    referrer: mapReferralRow({
+      id: userId,
+      userId,
+      code: raw.relationship?.referralCode ?? null,
+      referrals: (raw.directReferrals || []).length,
+      activeReferrals: (raw.directReferrals || []).filter((r: any) => r.isActive).length,
+      volumeSol: balance.volumeSol,
+      volumeEth: balance.volumeEth,
+      volumeUsd: balance.volumeUsd,
+      pendingRewards: balance.pendingBalance ?? balance.pendingRewards,
+      paidRewards: balance.totalPaidOut ?? balance.paidRewards,
+      claimableRewards: balance.pendingBalance ?? balance.claimableRewards,
+      status: (raw.directReferrals || []).length > 0 ? 'active' : 'inactive',
+    }),
+    referredUsers: (raw.directReferrals || []).map((u: any) => mapReferredUser(u)),
     claims: [...(raw.payouts || []), ...(raw.commissions || [])].map(mapClaim),
-  }
-}
-
-export function mapPaymentRow(raw: any): ReferralPaymentRow {
-  const statusRaw = (raw.status || '').toLowerCase()
-  const status: ReferralPaymentRow['status'] =
-    statusRaw === 'paid' || statusRaw === 'completed'
-      ? 'paid'
-      : statusRaw === 'failed' || statusRaw === 'error'
-        ? 'failed'
-        : 'pending'
-
-  return {
-    id: String(raw.id ?? raw._id ?? ''),
-    userId: raw.userId != null ? String(raw.userId) : null,
-    userName: raw.userName ?? raw.username ?? null,
-    amount: num(raw.amountUsd ?? raw.amount),
-    amountSol: raw.amountSol != null ? num(raw.amountSol) : null,
-    status,
-    wallet: raw.wallet ?? raw.walletAddress ?? null,
-    hash: raw.hash ?? raw.txHash ?? raw.signature ?? null,
-    time: raw.time ?? raw.createdAt ?? raw.paidAt ?? raw.timestamp ?? null,
+    volume: null,
+    prices: { solPriceUsd: null, ethPriceUsd: null },
+    rewardRate: 0.001,
   }
 }
 
@@ -242,18 +230,31 @@ export async function getReferrals(params: {
   status?: '' | 'active' | 'inactive'
 }): Promise<ReferralsResult> {
   if (useMockData) {
-    let items: ReferralRow[] = mockReferrals.map((r) =>
-      mapReferralRow({
-        ...r,
+    const solPrice = 77.31
+    let items: ReferralRow[] = mockReferrals.map((r) => {
+      const pendingSol = r.pendingRewards / solPrice
+      const paidSol = r.paidRewards / solPrice
+      return mapReferralRow({
+        id: r.userId,
+        userId: r.userId,
+        userName: r.userName,
+        code: r.code,
+        referrals: r.referrals,
         activeReferrals: Math.max(0, Math.floor(r.referrals * 0.6)),
-        volumeSol: r.paidRewards / 80,
+        volumeSol: r.paidRewards / solPrice,
         volumeEth: 0,
         volumeUsd: r.paidRewards * 4,
+        pendingRewards: pendingSol,
         pendingRewardsUsd: r.pendingRewards,
+        paidRewards: paidSol,
         paidRewardsUsd: r.paidRewards,
+        claimableRewards: pendingSol,
         claimableRewardsUsd: r.pendingRewards,
-      }),
-    )
+        pendingClaims: r.pendingRewards > 0 ? 1 : 0,
+        status: r.status,
+        lastVolumeAt: null,
+      })
+    })
     const q = (params.search || '').toLowerCase()
     if (q) {
       items = items.filter(
@@ -264,7 +265,14 @@ export async function getReferrals(params: {
       )
     }
     if (params.status) items = items.filter((r) => r.status === params.status)
-    return { items, total: items.length, page: 1, totalPages: 1 }
+    return {
+      items,
+      total: items.length,
+      page: 1,
+      totalPages: 1,
+      prices: { solPriceUsd: solPrice, ethPriceUsd: 1920.88 },
+      rewardRate: 0.001,
+    }
   }
 
   assertLiveApi()
@@ -282,38 +290,64 @@ export async function getReferrals(params: {
     total: res.data.pagination?.total ?? res.data.items?.length ?? 0,
     page: res.data.pagination?.page ?? params.page,
     totalPages: res.data.pagination?.totalPages ?? 1,
+    prices: {
+      solPriceUsd: res.data.prices?.solPriceUsd ?? null,
+      ethPriceUsd: res.data.prices?.ethPriceUsd ?? null,
+    },
+    rewardRate: num(res.data.rewardRate, 0.001),
   }
 }
 
 export async function getReferralDetail(userId: string): Promise<ReferralDetail> {
   if (useMockData) {
     const row = mockReferrals.find((r) => r.userId === userId)
+    const solPrice = 77.31
+    const pendingSol = (row?.pendingRewards ?? 0) / solPrice
+    const paidSol = (row?.paidRewards ?? 0) / solPrice
     return mapReferralDetail(
       {
-        userId,
-        userName: row?.userName ?? null,
-        code: row?.code ?? null,
-        status: row?.status ?? 'inactive',
-        referrals: row?.referrals ?? 0,
-        activeReferrals: Math.floor((row?.referrals ?? 0) * 0.6),
-        volumeUsd: (row?.paidRewards ?? 0) * 4,
-        volumeSol: (row?.paidRewards ?? 0) / 80,
-        volumeEth: 0,
-        pendingRewardsUsd: row?.pendingRewards ?? 0,
-        paidRewardsUsd: row?.paidRewards ?? 0,
-        claimableRewardsUsd: row?.pendingRewards ?? 0,
+        referrer: row
+          ? {
+              id: row.userId,
+              userId: row.userId,
+              userName: row.userName,
+              code: row.code,
+              referrals: row.referrals,
+              activeReferrals: Math.floor(row.referrals * 0.6),
+              volumeSol: paidSol,
+              volumeEth: 0,
+              volumeUsd: (row.paidRewards ?? 0) * 4,
+              pendingRewards: pendingSol,
+              pendingRewardsUsd: row.pendingRewards,
+              paidRewards: paidSol,
+              paidRewardsUsd: row.paidRewards,
+              claimableRewards: pendingSol,
+              claimableRewardsUsd: row.pendingRewards,
+              pendingClaims: row.pendingRewards > 0 ? 1 : 0,
+              status: row.status,
+              lastVolumeAt: null,
+            }
+          : null,
         referredUsers: [],
         claims: mockPayments
           .filter((p) => p.userName === row?.userName)
           .map((p) => ({
             id: p.id,
-            amountUsd: p.amount,
-            amountSol: p.amount / 80,
             status: p.status,
-            wallet: p.wallet,
-            txHash: p.hash === '—' ? null : p.hash,
+            amountSol: p.amount / solPrice,
+            telegramHandle: null,
+            payoutTxHash: p.hash === '—' ? null : p.hash,
             createdAt: p.time,
+            paidAt: p.status === 'paid' ? p.time : null,
           })),
+        volume: {
+          solLamports: String(Math.round(paidSol * 1e9)),
+          ethWei: '0',
+          activeTraderIds: [],
+          updatedAt: null,
+        },
+        prices: { solPriceUsd: solPrice, ethPriceUsd: 1920.88 },
+        rewardRate: 0.001,
       },
       userId,
     )
@@ -322,31 +356,4 @@ export async function getReferralDetail(userId: string): Promise<ReferralDetail>
   assertLiveApi()
   const res = await api.get(`/api/v1/referrals/${encodeURIComponent(userId)}`)
   return mapReferralDetail(res.data, userId)
-}
-
-export async function getReferralPayments(params: {
-  page: number
-  status?: '' | 'pending' | 'paid' | 'failed'
-}): Promise<ReferralPaymentsResult> {
-  if (useMockData) {
-    let items = mockPayments.map(mapPaymentRow)
-    if (params.status) items = items.filter((p) => p.status === params.status)
-    return { items, total: items.length, page: 1, totalPages: 1 }
-  }
-
-  assertLiveApi()
-  const res = await api.get('/api/v1/referral-payments', {
-    params: {
-      page: params.page,
-      limit: PAGE_SIZE,
-      ...(params.status ? { status: params.status } : {}),
-    },
-  })
-
-  return {
-    items: (res.data.items || []).map(mapPaymentRow),
-    total: res.data.pagination?.total ?? res.data.items?.length ?? 0,
-    page: res.data.pagination?.page ?? params.page,
-    totalPages: res.data.pagination?.totalPages ?? 1,
-  }
 }

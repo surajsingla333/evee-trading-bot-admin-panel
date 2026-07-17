@@ -29,10 +29,31 @@ function displayName(r: { userName: string | null; userId: string }) {
   return r.userName || r.userId
 }
 
-function rewardLabel(usd: number, sol: number | null) {
-  if (sol != null && sol > 0 && usd === 0) return `${sol} SOL`
-  if (sol != null && sol > 0) return `${formatCurrency(usd)} · ${sol} SOL`
-  return formatCurrency(usd)
+function formatSol(amount: number) {
+  if (amount === 0) return '0 SOL'
+  if (Math.abs(amount) < 0.0001) return `${amount.toExponential(2)} SOL`
+  return `${Number(amount.toFixed(6))} SOL`
+}
+
+function lamportsToSol(lamports: string | null | undefined) {
+  if (!lamports) return 0
+  const n = Number(lamports)
+  return Number.isFinite(n) ? n / 1e9 : 0
+}
+
+function weiToEth(wei: string | null | undefined) {
+  if (!wei) return 0
+  const n = Number(wei)
+  return Number.isFinite(n) ? n / 1e18 : 0
+}
+
+function rewardCell(sol: number, usd: number) {
+  return (
+    <div>
+      <p className="font-medium">{formatSol(sol)}</p>
+      {usd > 0 && <p className="text-[11px] text-muted">{formatCurrency(usd)}</p>}
+    </div>
+  )
 }
 
 export function ReferralsPage() {
@@ -105,16 +126,32 @@ export function ReferralsPage() {
     }
   }, [selected])
 
-  const pendingTotal = data?.items.reduce((s, r) => s + r.pendingRewards, 0) ?? 0
-  const paidTotal = data?.items.reduce((s, r) => s + r.paidRewards, 0) ?? 0
+  const pendingUsd = data?.items.reduce((s, r) => s + r.pendingRewardsUsd, 0) ?? 0
+  const pendingSol = data?.items.reduce((s, r) => s + r.pendingRewards, 0) ?? 0
+  const paidUsd = data?.items.reduce((s, r) => s + r.paidRewardsUsd, 0) ?? 0
+  const paidSol = data?.items.reduce((s, r) => s + r.paidRewards, 0) ?? 0
+  const claimableUsd = data?.items.reduce((s, r) => s + r.claimableRewardsUsd, 0) ?? 0
+  const claimableSol = data?.items.reduce((s, r) => s + r.claimableRewards, 0) ?? 0
   const activeCount = data?.items.filter((r) => r.status === 'active').length ?? 0
-  const claimableTotal = data?.items.reduce((s, r) => s + r.claimableRewards, 0) ?? 0
+  const rewardPct = data ? data.rewardRate * 100 : 0.1
 
   return (
     <div>
       <PageHeader
         title="Referrals"
-        description="Claim v2 referral ledger — volume, claimable rewards, and payout status."
+        description={
+          data
+            ? `Claim v2 ledger · ${rewardPct}% of referral volume${
+                data.prices.solPriceUsd != null
+                  ? ` · SOL $${data.prices.solPriceUsd}`
+                  : ''
+              }${
+                data.prices.ethPriceUsd != null
+                  ? ` · ETH $${data.prices.ethPriceUsd}`
+                  : ''
+              }`
+            : 'Claim v2 referral ledger — volume, claimable rewards, and payout status.'
+        }
         actions={
           <Button variant="secondary" onClick={() => setReloadKey((k) => k + 1)}>
             <RefreshCw className="h-4 w-4" /> Refresh
@@ -125,21 +162,20 @@ export function ReferralsPage() {
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-8">
         <Card className="p-5">
           <p className="text-[13px] text-muted font-medium">Pending Rewards</p>
-          <p className="mt-2 text-2xl font-semibold text-amber-600">
-            {formatCurrency(pendingTotal)}
-          </p>
+          <p className="mt-2 text-2xl font-semibold text-amber-600">{formatSol(pendingSol)}</p>
+          <p className="mt-1 text-xs text-muted">{formatCurrency(pendingUsd)}</p>
         </Card>
         <Card className="p-5">
           <p className="text-[13px] text-muted font-medium">Paid Rewards</p>
-          <p className="mt-2 text-2xl font-semibold text-emerald-600">
-            {formatCurrency(paidTotal)}
-          </p>
+          <p className="mt-2 text-2xl font-semibold text-emerald-600">{formatSol(paidSol)}</p>
+          <p className="mt-1 text-xs text-muted">{formatCurrency(paidUsd)}</p>
         </Card>
         <Card className="p-5">
           <p className="text-[13px] text-muted font-medium">Claimable</p>
           <p className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">
-            {formatCurrency(claimableTotal)}
+            {formatSol(claimableSol)}
           </p>
+          <p className="mt-1 text-xs text-muted">{formatCurrency(claimableUsd)}</p>
         </Card>
         <Card className="p-5">
           <p className="text-[13px] text-muted font-medium">Active Referrers</p>
@@ -149,6 +185,7 @@ export function ReferralsPage() {
               <span className="ml-2 text-sm font-normal text-muted">/ {data.total}</span>
             ) : null}
           </p>
+          <p className="mt-1 text-xs text-muted">Reward rate {rewardPct}%</p>
         </Card>
       </div>
 
@@ -209,6 +246,8 @@ export function ReferralsPage() {
                 <Th>Pending</Th>
                 <Th>Paid</Th>
                 <Th>Claimable</Th>
+                <Th>Claims</Th>
+                <Th>Last Volume</Th>
                 <Th>Status</Th>
               </tr>
             </THead>
@@ -240,19 +279,21 @@ export function ReferralsPage() {
                     <div>
                       <p className="font-medium">{formatCurrency(r.volumeUsd)}</p>
                       <p className="text-[11px] text-muted">
-                        {r.volumeSol} SOL
+                        {formatSol(r.volumeSol)}
                         {r.volumeEth > 0 ? ` · ${r.volumeEth} ETH` : ''}
                       </p>
                     </div>
                   </Td>
-                  <Td className="text-amber-600 font-medium">
-                    {rewardLabel(r.pendingRewards, r.pendingRewardsSol)}
+                  <Td className="text-amber-600">
+                    {rewardCell(r.pendingRewards, r.pendingRewardsUsd)}
                   </Td>
-                  <Td className="text-emerald-600 font-medium">
-                    {rewardLabel(r.paidRewards, r.paidRewardsSol)}
+                  <Td className="text-emerald-600">
+                    {rewardCell(r.paidRewards, r.paidRewardsUsd)}
                   </Td>
-                  <Td className="font-medium">
-                    {rewardLabel(r.claimableRewards, r.claimableRewardsSol)}
+                  <Td>{rewardCell(r.claimableRewards, r.claimableRewardsUsd)}</Td>
+                  <Td>{r.pendingClaims}</Td>
+                  <Td>
+                    {r.lastVolumeAt ? formatRelativeTime(r.lastVolumeAt) : '—'}
                   </Td>
                   <Td>
                     <Badge
@@ -296,125 +337,173 @@ export function ReferralsPage() {
             )}
             {!detailLoading && !detailError && detail && (
               <div className="space-y-6">
-                <div className="grid grid-cols-2 gap-3">
-                  {[
-                    ['Referrals', String(detail.referrals)],
-                    ['Active', String(detail.activeReferrals)],
-                    ['Volume USD', formatCurrency(detail.volumeUsd)],
-                    [
-                      'Volume Native',
-                      `${detail.volumeSol} SOL${detail.volumeEth > 0 ? ` · ${detail.volumeEth} ETH` : ''}`,
-                    ],
-                    ['Pending', formatCurrency(detail.pendingRewards)],
-                    ['Paid', formatCurrency(detail.paidRewards)],
-                    ['Claimable', formatCurrency(detail.claimableRewards)],
-                    ['Status', detail.status],
-                  ].map(([k, v]) => (
-                    <div
-                      key={k}
-                      className="rounded-[14px] border border-border dark:border-border-dark px-3 py-2.5"
-                    >
-                      <p className="text-[11px] text-muted">{k}</p>
-                      <p className="mt-0.5 text-sm font-semibold text-slate-900 dark:text-white capitalize">
-                        {v}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-
-                <div>
-                  <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted">
-                    Referred Users
-                  </p>
-                  {detail.referredUsers.length === 0 ? (
-                    <p className="py-4 text-center text-sm text-muted">No referred users yet.</p>
-                  ) : (
-                    <div className="space-y-2">
-                      {detail.referredUsers.map((u) => (
-                        <div
-                          key={u.userId}
-                          className="flex items-center justify-between rounded-[14px] border border-border dark:border-border-dark px-4 py-2.5"
-                        >
-                          <div>
-                            <p className="text-sm font-medium text-slate-900 dark:text-white">
-                              {u.username ? `@${u.username}` : u.userId}
+                {(() => {
+                  const r = detail.referrer ?? selected
+                  const volSol = lamportsToSol(detail.volume?.solLamports)
+                  const volEth = weiToEth(detail.volume?.ethWei)
+                  const rewardPct = detail.rewardRate * 100
+                  return (
+                    <>
+                      <div className="grid grid-cols-2 gap-3">
+                        {[
+                          [
+                            'Pending',
+                            `${formatSol(r.pendingRewards)} · ${formatCurrency(r.pendingRewardsUsd)}`,
+                          ],
+                          [
+                            'Paid',
+                            `${formatSol(r.paidRewards)} · ${formatCurrency(r.paidRewardsUsd)}`,
+                          ],
+                          [
+                            'Claimable',
+                            `${formatSol(r.claimableRewards)} · ${formatCurrency(r.claimableRewardsUsd)}`,
+                          ],
+                          ['Pending Claims', String(r.pendingClaims)],
+                          ['Referrals / Active', `${r.referrals} / ${r.activeReferrals}`],
+                          ['Reward Rate', `${rewardPct}%`],
+                          [
+                            'Volume (ledger)',
+                            `${formatSol(volSol)}${volEth > 0 ? ` · ${Number(volEth.toFixed(6))} ETH` : ''}`,
+                          ],
+                          [
+                            'Volume USD',
+                            formatCurrency(r.volumeUsd),
+                          ],
+                          [
+                            'Active Traders',
+                            String(detail.volume?.activeTraderIds.length ?? r.activeReferrals),
+                          ],
+                          [
+                            'Last Volume',
+                            detail.volume?.updatedAt || r.lastVolumeAt
+                              ? new Date(
+                                  (detail.volume?.updatedAt || r.lastVolumeAt) as string,
+                                ).toLocaleString()
+                              : '—',
+                          ],
+                          [
+                            'SOL Price',
+                            detail.prices.solPriceUsd != null
+                              ? `$${detail.prices.solPriceUsd}`
+                              : '—',
+                          ],
+                          [
+                            'ETH Price',
+                            detail.prices.ethPriceUsd != null
+                              ? `$${detail.prices.ethPriceUsd}`
+                              : '—',
+                          ],
+                        ].map(([k, v]) => (
+                          <div
+                            key={k}
+                            className="rounded-[14px] border border-border dark:border-border-dark px-3 py-2.5"
+                          >
+                            <p className="text-[11px] text-muted">{k}</p>
+                            <p className="mt-0.5 text-sm font-semibold text-slate-900 dark:text-white">
+                              {v}
                             </p>
-                            {u.joinedAt && (
-                              <p className="text-[11px] text-muted">
-                                Joined {formatRelativeTime(u.joinedAt)}
-                              </p>
-                            )}
                           </div>
-                          <div className="text-right">
-                            <Badge variant={u.traded ? 'success' : 'neutral'} dot>
-                              {u.traded ? 'Traded' : 'No trades'}
-                            </Badge>
-                            {u.volumeUsd > 0 && (
-                              <p className="mt-1 text-[11px] text-muted">
-                                {formatCurrency(u.volumeUsd)}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                        ))}
+                      </div>
 
-                <div>
-                  <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted">
-                    Claim History
-                  </p>
-                  {detail.claims.length === 0 ? (
-                    <p className="py-4 text-center text-sm text-muted">No claims yet.</p>
-                  ) : (
-                    <div className="space-y-2">
-                      {detail.claims.map((c) => (
-                        <div
-                          key={c.id}
-                          className="rounded-[14px] border border-border dark:border-border-dark px-4 py-3"
-                        >
-                          <div className="flex items-center justify-between gap-3">
-                            <div>
-                              <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                                {c.amountUsd > 0
-                                  ? formatCurrency(c.amountUsd)
-                                  : `${c.amountSol} SOL`}
-                                {c.amountUsd > 0 && c.amountSol > 0 && (
-                                  <span className="ml-1 text-xs font-normal text-muted">
-                                    · {c.amountSol} SOL
-                                  </span>
-                                )}
-                              </p>
-                              {c.wallet && (
-                                <code className="text-[11px] text-muted">{c.wallet}</code>
-                              )}
-                            </div>
-                            <div className="text-right shrink-0">
-                              <Badge
-                                variant={claimStatusVariant[c.status] ?? 'neutral'}
-                                dot
-                                className="capitalize"
+                      <div>
+                        <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted">
+                          Referred Users ({detail.referredUsers.length})
+                        </p>
+                        {detail.referredUsers.length === 0 ? (
+                          <p className="py-4 text-center text-sm text-muted">
+                            No referred users yet.
+                          </p>
+                        ) : (
+                          <div className="space-y-2">
+                            {detail.referredUsers.map((u) => (
+                              <div
+                                key={u.userId}
+                                className="flex items-center justify-between rounded-[14px] border border-border dark:border-border-dark px-4 py-2.5"
                               >
-                                {c.status}
-                              </Badge>
-                              {c.createdAt && (
-                                <p className="mt-1 text-[11px] text-muted">
-                                  {formatRelativeTime(c.createdAt)}
-                                </p>
-                              )}
-                            </div>
+                                <div>
+                                  <p className="text-sm font-medium text-slate-900 dark:text-white">
+                                    {u.userName || u.userId}
+                                  </p>
+                                  <p className="text-[11px] text-muted font-mono">
+                                    {u.userId}
+                                    {u.referralCode ? ` · ${u.referralCode}` : ''}
+                                  </p>
+                                  {u.registeredAt && (
+                                    <p className="text-[11px] text-muted">
+                                      Joined {formatRelativeTime(u.registeredAt)}
+                                    </p>
+                                  )}
+                                </div>
+                                <Badge variant={u.traded ? 'success' : 'neutral'} dot>
+                                  {u.traded ? 'Traded' : 'No trades'}
+                                </Badge>
+                              </div>
+                            ))}
                           </div>
-                          {c.txHash && (
-                            <p className="mt-1.5 font-mono text-[11px] text-muted truncate">
-                              {c.txHash}
-                            </p>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                        )}
+                      </div>
+
+                      <div>
+                        <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted">
+                          Claim History ({detail.claims.length})
+                        </p>
+                        {detail.claims.length === 0 ? (
+                          <p className="py-4 text-center text-sm text-muted">No claims yet.</p>
+                        ) : (
+                          <div className="space-y-2">
+                            {detail.claims.map((c) => {
+                              const statusKey = c.status.toLowerCase()
+                              return (
+                                <div
+                                  key={c.id}
+                                  className="rounded-[14px] border border-border dark:border-border-dark px-4 py-3"
+                                >
+                                  <div className="flex items-center justify-between gap-3">
+                                    <div>
+                                      <p className="text-sm font-semibold text-slate-900 dark:text-white">
+                                        {formatSol(c.amountSol)}
+                                      </p>
+                                      {c.telegramHandle && (
+                                        <p className="text-[11px] text-muted">
+                                          @{c.telegramHandle.replace(/^@/, '')}
+                                        </p>
+                                      )}
+                                    </div>
+                                    <div className="text-right shrink-0">
+                                      <Badge
+                                        variant={claimStatusVariant[statusKey] ?? 'neutral'}
+                                        dot
+                                        className="capitalize"
+                                      >
+                                        {c.status}
+                                      </Badge>
+                                      {c.createdAt && (
+                                        <p className="mt-1 text-[11px] text-muted">
+                                          Created {formatRelativeTime(c.createdAt)}
+                                        </p>
+                                      )}
+                                      {c.paidAt && (
+                                        <p className="text-[11px] text-muted">
+                                          Paid {formatRelativeTime(c.paidAt)}
+                                        </p>
+                                      )}
+                                    </div>
+                                  </div>
+                                  {c.payoutTxHash && (
+                                    <p className="mt-1.5 font-mono text-[11px] text-muted truncate">
+                                      {c.payoutTxHash}
+                                    </p>
+                                  )}
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )
+                })()}
               </div>
             )}
           </div>
