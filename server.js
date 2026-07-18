@@ -13,9 +13,12 @@ const adminToken = process.env.ADMIN_API_TOKEN || ''
 
 const app = express()
 
+// Mounted at root with pathFilter so the full path (/api/v1/...) is preserved.
+// Mounting via app.use('/api', ...) would strip the /api prefix before proxying.
 const apiProxy = createProxyMiddleware({
   target,
   changeOrigin: true,
+  pathFilter: ['/api', '/health'],
   on: {
     proxyReq: (proxyReq, req) => {
       if (adminToken && !req.headers.authorization) {
@@ -25,8 +28,7 @@ const apiProxy = createProxyMiddleware({
   },
 })
 
-app.use('/api', apiProxy)
-app.use('/health', apiProxy)
+app.use(apiProxy)
 
 const dist = path.join(__dirname, 'dist')
 app.use(express.static(dist))
